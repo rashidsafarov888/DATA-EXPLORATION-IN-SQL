@@ -1,0 +1,87 @@
+--To find out the total amount of SalesAmount based on customer's age as followings:
+--Over 55
+--45-55
+--30-44
+--29-18
+
+SELECT IIF(DATEDIFF(YEAR, BirthDate, GETDATE()) > 55, 'Over 55',
+	   IIF(DATEDIFF(YEAR, BirthDate, GETDATE()) > = 45, '45-55',
+	   IIF(DATEDIFF(YEAR, BirthDate, GETDATE()) > = 30, '30-44','29-18'
+))) AS age_category,
+SUM(CASE 
+		WHEN DATEDIFF(YEAR, BirthDate, GETDATE()) > 55 THEN a.SalesAmount
+		WHEN DATEDIFF(YEAR, BirthDate, GETDATE()) > 55 THEN a.SalesAmount
+		WHEN DATEDIFF(YEAR, BirthDate, GETDATE()) > = 30 THEN a.SalesAmount
+		ELSE a.SalesAmount END) AS SalesAmount,
+AVG(CASE 
+		WHEN DATEDIFF(YEAR, BirthDate, GETDATE()) > 55 THEN a.SalesAmount
+		WHEN DATEDIFF(YEAR, BirthDate, GETDATE()) > 55 THEN a.SalesAmount
+		WHEN DATEDIFF(YEAR, BirthDate, GETDATE()) > = 30 THEN a.SalesAmount
+		ELSE a.SalesAmount END) AS AvgSalesAmount,
+COUNT(CASE 
+		WHEN DATEDIFF(YEAR, BirthDate, GETDATE()) > 55 THEN a.SalesAmount
+		WHEN DATEDIFF(YEAR, BirthDate, GETDATE()) > 55 THEN a.SalesAmount
+		WHEN DATEDIFF(YEAR, BirthDate, GETDATE()) > = 30 THEN a.SalesAmount
+		ELSE a.SalesAmount END) AS TotalTransactions
+FROM
+(SELECT CustomerKey, SalesAmount
+FROM FactInternetSales)a
+LEFT JOIN
+(SELECT CustomerKey, BirthDate
+FROM DimCustomer)b
+ON a.CustomerKey = b.CustomerKey
+GROUP BY IIF(DATEDIFF(YEAR, BirthDate, GETDATE()) > 55, 'Over 55',
+	   IIF(DATEDIFF(YEAR, BirthDate, GETDATE()) > = 45, '45-55',
+	   IIF(DATEDIFF(YEAR, BirthDate, GETDATE()) > = 30, '30-44','29-18'
+)))
+ORDER BY SalesAmount DESC
+--------------------------------------------------------------------------------------------------------------------------
+--There is also another possible of way getting the same result but by adding physical age_category column to our DimCustomer table--
+
+--Adding a new column to the DimCustomer table
+ALTER TABLE DimCustomer
+  ADD age_category NVARCHAR (10) 
+
+-- Updating age_category column to get age category from birthdate of the customers
+UPDATE DimCustomer
+SET age_cateogry = IIF(DATEDIFF(YEAR, BirthDate, GETDATE()) > 55, 'Over 55',
+	   IIF(DATEDIFF(YEAR, BirthDate, GETDATE()) > = 45, '45-55',
+	   IIF(DATEDIFF(YEAR, BirthDate, GETDATE()) > = 30, '30-44','29-18'
+)))
+-------------------------------------------------------------------------------------------------------------------------------
+SELECT Gender,
+       MaritalStatus,
+       age_cateogry,
+       Round(SalesAmount, 2)                     AS SalesAmount,
+       AvgSalesamount,
+       TotalTransactions,
+       Round(Sum(SalesAmount)
+               OVER(
+                 Partition BY Gender), 2)        AS part_gen_salesamount,
+       Round(Sum(SalesAmount)
+               OVER(
+                 Partition BY MaritalStatus), 2) AS part_mart_salesamount,
+       Round(Sum(SalesAmount)
+               OVER (), 2)                       AS TotalSalesAmount
+FROM   (SELECT age_cateogry,
+               Gender,
+               MaritalStatus,
+               Sum(SalesAmount) AS SalesAmount,
+               Avg(SalesAmount) AS AvgSalesamount,
+               Count(*)         AS TotalTransactions
+        FROM   (SELECT CustomerKey,
+                       SalesAmount
+                FROM   FactInternetSales)a
+               LEFT JOIN (SELECT CustomerKey,
+                                 age_cateogry,
+                                 Gender,
+                                 MaritalStatus
+                          FROM   DimCustomer)b
+                      ON a.CustomerKey = b.CustomerKey
+        GROUP  BY age_cateogry,
+                  Gender,
+                  MaritalStatus)a
+ORDER  BY Gender,
+          MaritalStatus,
+          age_cateogry,
+          SalesAmount DESC 
