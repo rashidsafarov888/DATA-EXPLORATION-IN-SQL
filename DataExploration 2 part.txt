@@ -1,0 +1,264 @@
+-- 1. What is the Total Revenue of the company?
+--2. What is the YoY between the latest year and previous year of the company?
+--3. What is the Revenue of the company by years? 
+--4. What is the best product in United States?
+--5. What is the YoY the whole years of the company?
+--6. What was the best month for sales in a specific year?
+--7. To find out the total amount of revenue discount of the company by Promotion type
+--8. What is the MoM for the year 2019?
+--9. What is the MoM Revenue by Country and Calendar Year?
+--10. Who is our best customer (this could be best answered with RFM)
+------------------------------------------------------------------------------------
+
+-- 1. What is the Total Revenue of the company?
+SET language english
+
+SELECT Format(Sum(SalesAmount), 'c0') AS TotalRevenue
+FROM   FactInternetSales 
+
+---------------------------------------------------------------------------
+--2. What is the YoY between the latest year and previous year of the company?
+
+--select distinct CalendarYear
+--from DimDate
+--order by CalendarYear
+
+SELECT Revenue_2020,
+       Revenue_2019,
+       Revenue_2020 - Revenue_2019     AS dif_revenue,
+       Revenue_2020 / Revenue_2019 - 1 AS dif_pct
+FROM   (SELECT Sum(SalesAmount) AS Revenue_2020
+        FROM   FactInternetSales
+        WHERE  OrderDateKey IN (SELECT DateKey
+                                FROM   DimDate
+                                WHERE  CalendarYear IN (SELECT Max(CalendarYear)
+                                                        FROM   DimDate)))a,
+       (SELECT Sum(SalesAmount) AS Revenue_2019
+        FROM   FactInternetSales
+        WHERE  OrderDateKey IN (SELECT DateKey
+                                FROM   DimDate
+                                WHERE  CalendarYear IN (SELECT Max(CalendarYear) - 1
+                                                        FROM   DimDate)))b 
+---------------------------------------------------------------------------------------------
+--3. What is the Revenue of the company by years? 
+SELECT Year(FullDateAlternateKey)     PeridOfYears,
+       Format(Sum(SalesAmount), 'c0') AS TotalRevenue
+FROM   (SELECT OrderDateKey,
+               SalesAmount
+        FROM   FactInternetSales)a
+       LEFT JOIN (SELECT DateKey,
+                         FullDateAlternateKey
+                  FROM   DimDate)b
+              ON a.OrderDateKey = b.DateKey
+GROUP  BY Year(FullDateAlternateKey)
+ORDER  BY Year(FullDateAlternateKey) 
+----------------------------------------------------------------------
+--4. What is the best product in United States?
+SELECT TOP 5 EnglishProductName,
+             Round(Sum(SalesAmount), 2) AS Revenue
+FROM   (SELECT SalesTerritoryKey,
+               ProductKey,
+               SalesAmount
+        FROM   FactInternetSales)a
+       LEFT JOIN (SELECT SalesTerritoryKey,
+                         SalesTerritoryCountry
+                  FROM   DimSalesTerritory)b
+              ON a.SalesTerritoryKey = b.SalesTerritoryKey
+       LEFT JOIN (SELECT ProductKey,
+                         EnglishProductName
+                  FROM   DimProduct)c
+              ON a.ProductKey = c.ProductKey
+WHERE  SalesTerritoryCountry IN ( 'United States' )
+GROUP  BY EnglishProductName
+ORDER  BY 2 DESC 
+
+--------------------------------------------------------------
+--5. What is the YoY the whole years of the company?
+SELECT PeriodOfYears,
+       Revenue,
+       Isnull(Lag(Revenue)
+                OVER(
+                  ORDER BY PeriodOfYears), 0)    AS YoY_Revenue,
+       Revenue - Lag(Revenue)
+                   OVER(
+                     ORDER BY PeriodOfYears)     AS Dif_YoY_Revenue,
+       Revenue / Lag(Revenue)
+                   OVER(
+                     ORDER BY PeriodOfYears) - 1 AS Dif_YoY_Revenue_Pct
+FROM   (SELECT Year(FullDateAlternateKey) AS PeriodOfYears,
+               Round(Sum(SalesAmount), 2) AS Revenue
+        FROM   (SELECT OrderDateKey,
+                       SalesAmount
+                FROM   FactInternetSales)a
+               LEFT JOIN (SELECT DateKey,
+                                 FullDateAlternateKey
+                          FROM   DimDate)b
+                      ON a.OrderDateKey = b.DateKey
+        GROUP  BY Year(FullDateAlternateKey))a 
+--------------------------------------------------------------------
+--6. What was the best month for sales in a specific year?
+
+WITH Cte
+     AS (SELECT EnglishMonthName           AS EnglishMonthName,
+                MonthNumberOfYear,
+                Round(Sum(SalesAmount), 2) AS Revenue
+         FROM   (SELECT OrderDateKey,
+                        SalesAmount
+                 FROM   FactInternetSales)a
+                LEFT JOIN (SELECT DateKey,
+                                  EnglishMonthName,
+                                  MonthNumberOfYear,
+                                  FullDateAlternateKey
+                           FROM   DimDate)b
+                       ON a. OrderDatekey = b.Datekey
+         WHERE  Year(FullDateAlternateKey) = 2018
+         GROUP  BY EnglishMonthName,
+                   MonthNumberOfYear)
+SELECT EnglishMonthName,
+       Revenue
+FROM   Cte
+ORDER  BY Revenue DESC 
+
+
+--7. To find out the total amount of revenue discount of the company by Promotion type
+SET language english
+
+SELECT EnglishPromotionName,
+       Sum(SalesAmount)                            AS Revenue,
+       Round(Sum(DiscSales), 2)                    AS DiscSales,
+       Round(Sum(SalesAmount) - Sum(DiscSales), 2) AS TotalDiscountSales
+FROM   (SELECT EnglishPromotionName,
+               EnglishPromotionCategory,
+               SalesAmount,
+               SalesAmount * ( 1 - DiscountPct ) AS DiscSales
+        FROM   (SELECT PromotionKey,
+                       SalesAmount
+                FROM   FactInternetSales)a
+               LEFT JOIN (SELECT PromotionKey,
+                                 EnglishPromotionName,
+                                 EnglishPromotionCategory,
+                                 DiscountPct
+                          FROM   DimPromotion)b
+                      ON a.PromotionKey = b.PromotionKey)a
+WHERE  EnglishPromotionName <> 'No Discount'
+GROUP  BY EnglishPromotionName 
+---------------------------------------------------------------------------------
+--8. What is the MoM for the year 2019?
+WITH Cte
+     AS (SELECT EnglishMonthName,
+                MonthNumberOfYear,
+                Round(Sum(SalesAmount), 2) AS Revenue
+         FROM   (SELECT OrderDateKey,
+                        SalesAmount
+                 FROM   FactInternetSales)a
+                LEFT JOIN (SELECT DateKey,
+                                  EnglishMonthName,
+                                  CalendarYear,
+                                  MonthNumberOfYear
+                           FROM   DimDate)b
+                       ON a.OrderDateKey = b.DateKey
+         WHERE  CalendarYear = 2019
+         GROUP  BY EnglishMonthName,
+                   MonthNumberOfYear)
+SELECT EnglishMonthName,
+       Revenue,
+       Lag(Revenue)
+         OVER (
+           ORDER BY MonthNumberOfYear)               AS MoM_Revenue,
+       Revenue - Lag(Revenue)
+                   OVER (
+                     ORDER BY MonthNumberOfYear)     AS Dif_MoM_Revenue,
+       Revenue / Lag(Revenue)
+                   OVER (
+                     ORDER BY MonthNumberOfYear) - 1 AS MoM_Revenue_Pct
+FROM   Cte
+------------------------------------------------------------------------------
+--9. What is the MoM Revenue by Country and Calendar Year?
+SELECT SalesTerritoryCountry,
+       CalendarYear,
+       EnglishMonthName,
+       Revenue,
+       Lag(Revenue)
+         OVER (
+           PARTITION BY SalesTerritoryCountry, CalendarYear
+           ORDER BY MonthNumberOfyear)               AS MoM_Revnue,
+       Revenue - Lag(Revenue)
+                   OVER (
+                     PARTITION BY SalesTerritoryCountry, CalendarYear
+                     ORDER BY MonthNumberOfyear)     AS Dif_MoM_Revnue,
+       Revenue / Lag(Revenue)
+                   OVER (
+                     PARTITION BY SalesTerritoryCountry, CalendarYear
+                     ORDER BY MonthNumberOfyear) - 1 AS Pct_MoM_Revnue
+FROM   (SELECT SalesTerritoryCountry,
+               CalendarYear,
+               EnglishMonthName,
+               MonthNumberOfYear,
+               Round(Sum(SalesAmount), 2) AS Revenue
+        FROM   (SELECT OrderDateKey,
+                       SalesTerritoryKey,
+                       SalesAmount
+                FROM   FactInternetSales)a
+               LEFT JOIN (SELECT DateKey,
+                                 EnglishMonthName,
+                                 CalendarYear,
+                                 MonthNumberOfYear
+                          FROM   DimDate)b
+                      ON a.OrderDateKey = b.DateKey
+               LEFT JOIN (SELECT SalesTerritoryKey,
+                                 SalesTerritoryCountry
+                          FROM   DimSalesTerritory)c
+                      ON a.SalesTerritoryKey = c.SalesTerritoryKey
+        GROUP  BY SalesTerritoryCountry,
+                  CalendarYear,
+                  EnglishMonthName,
+                  MonthNumberOfYear)a 
+------------------------------------------------------------------------------
+
+--10. Who is our best customer (this could be best answered with RFM)
+DROP TABLE IF EXISTS rfm#;
+WITH rfm AS
+(
+SELECT Concat_ws(' ', FirstName,LastName, MiddleName) AS CustomerName,
+Count(SalesOrderNumber) AS Frequency,
+Sum(SalesAmount) AS MonetaryValue,
+Max(OrderDateKey1) AS last_order_date,
+(SELECT Max(OrderDateKey) FROM FactInternetSales) AS Max_Date,
+Datediff(DAY,Max(OrderDateKey1), (SELECT Max(OrderDateKey1)FROM FactInternetSales)) AS Recency
+FROM
+(SELECT SalesOrderNumber, OrderDateKey1, SalesAmount, CustomerKey
+FROM FactInternetSales)a
+LEFT JOIN
+(SELECT CustomerKey, FirstName, LastName, MiddleName
+FROM DimCustomer)b
+ON a.CustomerKey = b.CustomerKey
+GROUP BY Concat_ws('', FirstName,LastName, MiddleName)
+),
+rfm_calc AS
+(
+SELECT *, Ntile(4) OVER (ORDER BY Recency DESC) AS rfm_recency,
+		  Ntile(4) OVER (ORDER BY Frequency) AS rfm_frequency,
+		  Ntile(4) OVER (ORDER BY MonetaryValue) rfm_MonetaryValue
+FROM rfm
+)
+SELECT *,rfm_recency + rfm_frequency + rfm_MonetaryValue AS rfm_cells,
+Cast(rfm_recency AS VARCHAR) + Cast(rfm_frequency AS VARCHAR) + CONVERT(VARCHAR, rfm_MonetaryValue) rfm_string_cell
+INTO #rfm
+FROM rfm_calc
+
+WITH Cte AS
+(
+SELECT CustomerName, rfm_recency, rfm_frequency, rfm_MonetaryValue,
+CASE
+		WHEN rfm_string_cell IN (111, 112 , 121, 122, 123, 132, 211, 212, 114, 141) THEN 'lost_customers'  --lost customers
+		WHEN rfm_string_cell IN (133, 134, 143, 244, 334, 343, 344, 144) THEN 'slipping away, cannot lose' -- (Big spenders who haven’t purchased lately) slipping away
+		WHEN rfm_string_cell IN (311, 411, 331) THEN 'new_customers'
+		WHEN rfm_string_cell IN (222, 223, 233, 322) THEN 'potential_churners'
+		WHEN rfm_string_cell IN (323, 333,321, 422, 332, 432) THEN 'active' --(Customers who buy often & recently, but at low price points)
+		WHEN rfm_string_cell IN (433, 434, 443, 444) THEN 'loyal'
+	END rfm_segment
+FROM #rfm)
+SELECT *
+FROM   Cte
+WHERE  rfm_segment = 'loyal' 
+
